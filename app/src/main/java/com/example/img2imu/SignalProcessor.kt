@@ -12,12 +12,12 @@ import com.github.psambit9791.jdsp.windows._Window
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import org.apache.commons.math3.complex.Complex
 import java.io.BufferedReader
-import java.io.File
-import java.io.FileInputStream
 import java.io.InputStreamReader
 import java.nio.charset.StandardCharsets
 import kotlin.math.cos
+import kotlin.math.roundToInt
 import kotlin.math.sin
 
 class SignalProcessor(ctx: Context) {
@@ -44,19 +44,69 @@ class SignalProcessor(ctx: Context) {
         }
         val width = spectrograms[0][0].size
         val height = spectrograms[0].size
+
+        var minValue = Float.MAX_VALUE
+        var maxValue = Float.MIN_VALUE
+        for (list in spectrograms) {
+            for (floatArray in list) {
+                for (value in floatArray) {
+                    if (value < minValue) {
+                        minValue = value
+                    }
+                    if (value > maxValue) {
+                        maxValue = value
+                    }
+                }
+            }
+        }
+        Log.d(TAG+" Min value", spectrograms[0][0].size.toString())
+        Log.d(TAG+" Min value", minValue.toString())
+        Log.d(TAG+" Max value", maxValue.toString())
+
+        val new_spectrograms = mutableListOf<List<FloatArray>>()
+        for (list in spectrograms) {
+            val values = list.flatMap { it.asList() }
+            val min = values.min() ?: 0f
+            val max = values.max() ?: 1f
+            val range = max - min
+
+            val result = mutableListOf<FloatArray>()
+            for (array in list) {
+                result.add(array.map { (it - min) / range }.toFloatArray())
+            }
+            new_spectrograms.add(result)
+        }
+
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
         val paint = Paint().apply { color = Color.BLACK }
         for (y in 0 until height) {
             for (x in 0 until width) {
-                val r = spectrograms[0][y][x]
-                val g = spectrograms[1][y][x]
-                val b = spectrograms[2][y][x]
-                paint.color = Color.rgb((r * 255).toInt(), (g * 255).toInt(), (b * 255).toInt())
-                canvas.drawPoint(x.toFloat(), y.toFloat(), paint)
+                val r = new_spectrograms[0][y][x]
+                val g = new_spectrograms[1][y][x]
+                val b = new_spectrograms[2][y][x]
+                paint.color = Color.rgb((r * 255).roundToInt(), (g * 255).roundToInt(), (b * 255).roundToInt())
+                canvas.drawPoint(x.toFloat(), height-y.toFloat(), paint)
             }
         }
         return bitmap
+    }
+
+    fun getPSD(complexArray: Array<Array<Complex>>): Array<DoubleArray> {
+        val result = Array(complexArray.size) {
+            DoubleArray(
+                complexArray[0].size
+            )
+        }
+
+        // Fill in the output
+        for (c in complexArray[0].indices) {
+            for (r in complexArray.indices) {
+                result[r][c] = complexArray[r][c].real*complexArray[r][c].real+
+                        complexArray[r][c].imaginary*complexArray[r][c].imaginary
+            }
+        }
+        return result
     }
 
     suspend fun computeSpectrogram(rawData: List<FloatArray>): List<List<FloatArray>> {
@@ -72,11 +122,25 @@ class SignalProcessor(ctx: Context) {
                 Log.d(TAG, tmpdata.size.toString())
                 val window: _Window = Hanning(nfft)
                 val STFT = ShortTimeFourier(
-                    DoubleArray(tmpdata.size) { tmpdata[it].toDouble() }, nfft, noverlap, nfft, window,samplingFrequency.toDouble())
+                    DoubleArray(tmpdata.size) { tmpdata[it].toDouble() },
+                    nfft, noverlap, nfft,
+                    window, samplingFrequency.toDouble())
                 STFT.transform()
-                val spectrogram = STFT.spectrogram(true).toList()
+//                val spectrogram = getPSD(STFT.getComplex(true))
+//                val spectrogram = STFT.getMagnitude(true).toList()
+                var spectrogram = STFT.spectrogram(true).toList()
 
-                spectrograms.add(spectrogram.map { it.map { it.toFloat() }.toFloatArray() })
+                var sum = 0f
+                for (w in window.window) {
+                    val k = w.toFloat()
+                    sum += k*k
+                }
+
+                spectrograms.add(spectrogram.map { it.map { Math.log10(it).toFloat() }.toFloatArray() })
+//                spectrograms.add(spectrogram.map { it.map {
+//                            10*Math.log10((it.toFloat()*2/samplingFrequency/sum).toDouble()).toFloat()
+//                            }.toFloatArray() })
+//                spectrograms.add(spectrogram.map { it.map { it.toFloat() }.toFloatArray() })
             }
             spectrograms
         }
