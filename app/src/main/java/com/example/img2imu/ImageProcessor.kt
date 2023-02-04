@@ -20,13 +20,7 @@ class ImageProcessor(ctx: Context) {
 
     fun loadTensor(path: String): Tensor {
         var bitmap = open(path)
-//        var rotateMatrix = Matrix()
-//        rotateMatrix.postRotate(90F)
-//        bitmap = Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), rotateMatrix, false);
         bitmap = Bitmap.createScaledBitmap(bitmap!!, 128, 96, true)
-//        var rotateMatrix2 = Matrix()
-//        rotateMatrix2.postRotate(-90F)
-//        bitmap = Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), rotateMatrix2, false);
         return bitmapToFloat32Tensor(
             bitmap,
             TensorImageUtils.TORCHVISION_NORM_MEAN_RGB,
